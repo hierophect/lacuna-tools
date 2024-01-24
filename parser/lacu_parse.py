@@ -42,9 +42,10 @@ class ParsedPairGroup:
 
 
 class ParsedChapter:
-    def __init__(self, name, col_variants):
+    def __init__(self, name, col_variants, forced_idx):
         self.name = name
         self.column_variants = col_variants
+        self.forced_first_side = forced_idx
         self.cards = []
 
 
@@ -277,7 +278,15 @@ class Parser:
             return
         if self.following_subheader:
             self.num_subheader_columns = len(line)
-            self.current_object = ParsedChapter(self.current_subheader_str, line)
+            # find if any of the side titles is "forced first"
+            forced_idx = 0
+            for count, name in enumerate(line):
+                if name[0] == '^':
+                    forced_idx = count
+                    line[count] = name[1:]
+                    line.insert(0, line.pop(count))
+
+            self.current_object = ParsedChapter(self.current_subheader_str, line, forced_idx)
             self.following_subheader = False
             return
         if line[0][0] == "{":
@@ -293,16 +302,31 @@ class Parser:
             self.current_object.cards.append(self.current_card)
             return
         else:
-            self.num_card_sides += 1
             # cards with {} format do not use separators
             line_str = "".join(line)
             # trim the preceding tab, if it exists
             line_str.lstrip()
 
+            # figure out remap of card side labels for forced first sides
+            is_forced_first = False
+            true_label_index = 0
+            if self.num_card_sides == self.current_object.forced_first_side:
+                is_forced_first = True
+                true_label_index = 0
+            elif self.num_card_sides < self.current_object.forced_first_side:
+                true_label_index = self.num_card_sides + 1
+            else:
+                true_label_index = self.num_card_sides
+
             # data integrity
-            default = self.current_object.column_variants[self.num_card_sides - 1]
+            default = self.current_object.column_variants[true_label_index]
             if self.check_card_side_integrity(line_str,default):
-                self.current_card.sides.append(line_str)
+                if is_forced_first:
+                    self.current_card.sides.insert(0,line_str)
+                else:
+                    self.current_card.sides.append(line_str)
+
+            self.num_card_sides += 1
 
     def check_card_side_integrity(self, text, default):
         if default[0] == '~':

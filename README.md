@@ -7,7 +7,7 @@ Utilities for the Lacuna language system, such as the markdown-json converter, v
 - Python 3.9.4 or higher
 - Language-specific tool scripts may have additional language module requirements. Check each individually.
 
-### Instructions: 
+### Instructions:
 
 It's recommended to clone the repository directly into the folder where you are doing your deck assembly work, so these scripts are locally available.
 
@@ -45,4 +45,3 @@ It's recommended to clone the repository directly into the folder where you are 
   python verb_conjugator.py input.csv >> output.csv
   ```
 
-  
