@@ -47,6 +47,7 @@ class ParsedChapter:
         self.column_variants = col_variants
         self.forced_first_side = forced_idx
         self.cards = []
+        self.vocab = []
 
 
 class ParsedCard:
@@ -70,7 +71,7 @@ class Parser:
         self.current_card = None
 
     def process_line(self, line):
-        # print("processing line")
+        # print(f"PROCESS: {line}")
         self.line_index += 1
 
         # skip empty lines and comments
@@ -139,6 +140,11 @@ class Parser:
 
         # collect labels from the immediately following line
         if self.following_subheader:
+            # check for indentation, but don't mess stuff up if it's missing
+            if line[0][0] == ">":
+                line[0] = line[0][1:]
+            else:
+                self.log_issue(f"Subheader info line not indented, needs '>'")
             self.num_subheader_columns = len(line)
             self.current_object = ParsedSelectablesSubgroup(
                 self.current_subheader_str, line
@@ -161,6 +167,13 @@ class Parser:
         key_variant = line[2]
         keys = line[3][1:-1].split(",")
 
+        self.check_group_integrity(subgroup_name, key_variant, keys)
+
+        self.parsed_deck.groups.append(
+            ParsedGroup(group_name, subgroup_name, key_variant, keys)
+        )
+
+    def check_group_integrity(self, subgroup_name, key_variant, keys):
         # TODO: duplicate checking
         # Data integrity checking
         found_subgroup = None
@@ -194,10 +207,6 @@ class Parser:
                         f"found in selectable subgroup '{subgroup_name}'"
                     )
 
-        self.parsed_deck.groups.append(
-            ParsedGroup(group_name, subgroup_name, key_variant, keys)
-        )
-
     def parse_pairgroups(self, line):
         # print(line)
         # TODO: duplicate checking
@@ -212,6 +221,10 @@ class Parser:
             return
         # get names/types from follower line
         if self.following_subheader:
+            if line[0][0] == ">":
+                line[0] = line[0][1:]
+            else:
+                self.log_issue(f"Subheader info line not indented, needs '>'")
             self.num_subheader_columns = len(line)
             names = []
             types = []
@@ -277,19 +290,30 @@ class Parser:
             self.following_subheader = True
             return
         if self.following_subheader:
+            if line[0][0] == ">":
+                line[0] = line[0][1:]
+            else:
+                self.log_issue(f"Subheader info line not indented, needs '>'")
             self.num_subheader_columns = len(line)
             # find if any of the side titles is "forced first"
             forced_idx = 0
             for count, name in enumerate(line):
-                if name[0] == '^':
+                if name[0] == "^":
                     forced_idx = count
                     line[count] = name[1:]
                     line.insert(0, line.pop(count))
 
-            self.current_object = ParsedChapter(self.current_subheader_str, line, forced_idx)
+            self.current_object = ParsedChapter(
+                self.current_subheader_str, line, forced_idx
+            )
             self.following_subheader = False
             return
+        if line[0] == ">vocab":
+            # interpret vocab line
+            self.insert_vocab(line[1:])
+            return
         if line[0][0] == "{":
+            # TODO detect errant text outside brackets
             self.num_card_sides = 0
             self.current_card = ParsedCard()
             return
@@ -302,6 +326,7 @@ class Parser:
             self.current_object.cards.append(self.current_card)
             return
         else:
+            # TODO: check vocab integrity
             # cards with {} format do not use separators
             line_str = "".join(line)
             # trim the preceding tab, if it exists
@@ -320,16 +345,29 @@ class Parser:
 
             # data integrity
             default = self.current_object.column_variants[true_label_index]
-            if self.check_card_side_integrity(line_str,default):
+            if self.check_card_side_integrity(line_str, default):
                 if is_forced_first:
-                    self.current_card.sides.insert(0,line_str)
+                    self.current_card.sides.insert(0, line_str)
                 else:
                     self.current_card.sides.append(line_str)
 
             self.num_card_sides += 1
 
+    def insert_vocab(self, line):
+        # Groups are all on one line
+        subgroup_name = line[0]
+        key_variant = line[1]
+        keys = line[2][1:-1].split(",")
+
+        self.check_group_integrity(subgroup_name, key_variant, keys)
+
+        self.current_object.vocab.append(
+            ParsedGroup("vocab", subgroup_name, key_variant, keys)
+        )
+        return
+
     def check_card_side_integrity(self, text, default):
-        if default[0] == '~':
+        if default[0] == "~":
             default = default[1:]
         replaceables = re.findall(r"\[(.*?)\]", text)
         integrity_good = True
@@ -351,11 +389,14 @@ class Parser:
                 self.log_issue(f"No group '{gv[0]}' found for side")
                 integrity_good = False
             else:
-                subgroup = next((
-                    subgroup
-                    for subgroup in self.parsed_deck.subgroups
-                    if subgroup.name == found_group.subgroup_name
-                ), None)
+                subgroup = next(
+                    (
+                        subgroup
+                        for subgroup in self.parsed_deck.subgroups
+                        if subgroup.name == found_group.subgroup_name
+                    ),
+                    None,
+                )
                 if not gv[1] in subgroup.variant_names:
                     self.log_issue(
                         f"No variant '{gv[1]}' in subgroup '{subgroup.name}', used "
@@ -373,7 +414,8 @@ class Parser:
         print(json_data)
 
     def print_issues(self):
-        print("ISSUES:")
+        if len(self.issues) > 0:
+            print("ISSUES:")
         for issue in self.issues:
             print(issue)
 
