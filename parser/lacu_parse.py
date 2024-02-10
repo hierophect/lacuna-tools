@@ -66,6 +66,7 @@ class Parser:
         self.num_subheader_columns = 0
         self.num_card_sides = 0
         self.parsed_deck = ParsedDeck()
+        self.has_pair_groups = False
 
         # cards are multi-line
         self.current_card = None
@@ -111,11 +112,13 @@ class Parser:
         elif str == "Pair Groups" or str == "PairGroups":
             # print("PARSING PAIR GROUPS")
             # groups do not have leftovers
+            self.has_pair_groups = True
             self.current_state = "ParsePairGroups"
         elif str == "Cards":
             # print("PARSING CARDS")
             # append leftover pairgroup
-            self.parsed_deck.pair_groups.append(self.current_object)
+            if self.has_pair_groups:
+                self.parsed_deck.pair_groups.append(self.current_object)
             self.current_subheader_str = None
             self.current_object = None
 
