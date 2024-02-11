@@ -34,10 +34,11 @@ class ParsedGroup:
 
 
 class ParsedPairGroup:
-    def __init__(self, name, col_names, col_types):
+    def __init__(self, name, col_names, col_types, num_col):
         self.name = name
         self.column_names = col_names
         self.column_types = col_types
+        self.subgroup_checking = [None] * num_col
         self.pairs = []
 
 
@@ -234,25 +235,67 @@ class Parser:
             for section in line:
                 names.append(section.split("=")[0])
                 types.append(section.split("=")[1])
-            # TODO: this needs unfolded type/integrity checking
+            # check subheader integrity
+            for name, type in zip(names, types):
+                type_category = type.split(":")[0]
+                if type_category == "selectable":
+                    ## see if we have enough type info
+                    if len(type.split(":")) < 3:
+                        self.log_issue(
+                            f"Insufficient type information for column '{name}'"
+                        )
+                        continue
+                    ## check that the subgroup exists
+                    subgroup_name = type.split(":")[1]
+                    variant_name = type.split(":")[2]
+                    found_subgroup = False
+                    for subgroup in self.parsed_deck.subgroups:
+                        if subgroup.name == subgroup_name:
+                            found_subgroup = subgroup
+                    if not found_subgroup:
+                        self.log_issue(
+                            f"Subgroup '{subgroup_name}' for column '{name}' not found"
+                        )
+                    else:
+                        ## check that the variant exists in the subgroup
+                        if variant_name not in found_subgroup.variant_names:
+                            self.log_issue(
+                                f"Variant name '{variant_name }' not found in "
+                                f"'{subgroup_name}' for column '{name}'"
+                            )
+                elif type_category != "group":
+                    self.log_issue(f"Pair members must be either groups or selectables")
+
             self.current_object = ParsedPairGroup(
-                self.current_subheader_str, names, types
+                self.current_subheader_str, names, types, self.num_subheader_columns,
             )
             self.following_subheader = False
             return
         # Otherwise, start parsing pairs
         if len(line) != self.num_subheader_columns:
             self.log_issue(
-                f"Number of pair columns [{len(line)}]does not match header "
+                f"Number of pair columns [{len(line)}] does not match header "
                 f"[{self.num_subheader_columns}]"
             )
         # Data integrity checking
         for count, member in enumerate(line):
             if self.current_object.column_types[count].split(":")[0] == "group":
-                if not member in [group.name for group in self.parsed_deck.groups]:
+                group = self.get_object_by_name(member, self.parsed_deck.groups)
+                if not group:
                     self.log_issue(
                         f"No matching group for pair member '{member}' at index {count}"
                     )
+                    return
+                # if not member in [group.name for group in self.parsed_deck.groups]:
+                if not self.current_object.subgroup_checking[count]:
+                    self.current_object.subgroup_checking[count] = group.subgroup_name
+                else:
+                    if group.subgroup_name != self.current_object.subgroup_checking[count]:
+                        self.log_issue(
+                            f"Group's subgroup '{group.subgroup_name}' must match subgroups "
+                            f"in other groups of this column "
+                            f"({self.current_object.subgroup_checking[count]})"
+                        )
             if self.current_object.column_types[count].split(":")[0] == "selectable":
                 subgroup_name = self.current_object.column_types[count].split(":")[1]
                 variant_name = self.current_object.column_types[count].split(":")[2]
@@ -323,7 +366,7 @@ class Parser:
         elif line[0][0] == "}":
             if self.num_card_sides != self.num_subheader_columns:
                 self.log_issue(
-                    f"Number of card sides [{self.num_card_sides}]does not "
+                    f"Number of card sides [{self.num_card_sides}] does not "
                     f"match header [{self.num_subheader_columns}]"
                 )
             self.current_object.cards.append(self.current_card)
@@ -384,21 +427,13 @@ class Parser:
                 variant = rep[1]
             group_variants.append((group, variant))
         for gv in group_variants:
-            found_group = None
-            for group in self.parsed_deck.groups:
-                if group.name == gv[0]:
-                    found_group = group
+            found_group = self.get_object_by_name(gv[0], self.parsed_deck.groups)
             if not found_group:
                 self.log_issue(f"No group '{gv[0]}' found for side")
                 integrity_good = False
             else:
-                subgroup = next(
-                    (
-                        subgroup
-                        for subgroup in self.parsed_deck.subgroups
-                        if subgroup.name == found_group.subgroup_name
-                    ),
-                    None,
+                subgroup = self.get_object_by_name(
+                    found_group.subgroup_name, self.parsed_deck.subgroups
                 )
                 if not gv[1] in subgroup.variant_names:
                     self.log_issue(
@@ -406,7 +441,107 @@ class Parser:
                         f"in group '{gv[0]}'"
                     )
                     integrity_good = False
+
+        pg_replaceables = re.findall(r"\<(.*?)\>", text)
+        first_pg_name = None
+        if pg_replaceables and not self.parsed_deck.pair_groups:
+            self.log_issue(f"Contains pair group, but no pair groups in deck")
+            integrity_good = False
+            return
+        for pg in pg_replaceables:
+            pg = pg.split(":")
+            # pair groups need at least a name and alias
+            if len(pg) < 2:
+                self.log_issue(
+                    f"Not enough type information in Pair Group replaceable '{pg}'"
+                )
+                integrity_good = False
+            pg_name = pg[0]
+            # only allow one pair group per side
+            # TODO: it should be only one per card, too, but that'd be harder to mess up
+            if not first_pg_name:
+                first_pg_name = pg_name
+            else:
+                if pg_name != first_pg_name:
+                    self.log_issue(
+                        f"Pair group name '{pg_name}' does not match others in the side"
+                    )
+                    integrity_good = False
+            # gather other pg information
+            pg_alias = pg[1]
+            pg_varlabel = None
+            if len(pg) == 3:
+                pg_varlabel = pg[2]
+
+            pair_group = next(
+                    (pair_group
+                    for pair_group in self.parsed_deck.pair_groups
+                    if pair_group.name == pg_name),
+                None,
+            )
+            ## check if the pair group exists
+            if not pair_group:
+                self.log_issue(f"Could not find pair group '{pg_name}'")
+            else:
+                aliases = pair_group.column_names
+                types = pair_group.column_types
+                ## check if the alias exists
+                if pg_alias not in aliases:
+                    self.log_issue(f"Could not find alias '{pg_alias}'")
+                    continue
+                else:
+                    count = aliases.index(pg_alias)
+                    type = types[count].split(":")
+                    # we assume the type is good, since it was checked earlier.
+                    cata = type[0]
+                    # TODO: check if selectable variant label is valid
+                    if cata == "selectable":
+                        subgroup_name = type[1]
+                        subgroup = self.get_object_by_name(
+                            subgroup_name, self.parsed_deck.subgroups
+                        )
+                        # don't check if subgroup exists, we already did
+                        if pg_varlabel:
+                            if not pg_varlabel in subgroup.variant_names:
+                                self.log_issue(
+                                    f"No variant in '{subgroup_name}' named "
+                                    f"'{pg_varlabel}'"
+                                )
+                        else:
+                            if not default in subgroup.variant_names:
+                                self.log_issue(
+                                    f"Autoassigned variant for '{subgroup_name}' "
+                                    f"does not match '{default}'"
+                                )
+                    elif cata == "group":
+                        # selectable must be the same across groups, so it'll be the same
+                        # as that of the first matching group in the first pair of the pairgroup
+                        group_name = pair_group.pairs[0][count]
+                        found_group = self.get_object_by_name(group_name, self.parsed_deck.groups)
+                        subgroup = self.get_object_by_name(
+                            found_group.subgroup_name, self.parsed_deck.subgroups
+                        )
+                        if pg_varlabel:
+                            if not pg_varlabel in subgroup.variant_names:
+                                self.log_issue(
+                                    f"No variant for group's subgroup '{subgroup.name}' named "
+                                    f"'{pg_varlabel}'"
+                                )
+                        else:
+                            if not default in subgroup.variant_names:
+                                self.log_issue(
+                                    f"Autoassigned variant for group '{subgroup.name}' "
+                                    f"does not match '{default}'"
+                                )
+
         return integrity_good
+
+    def get_object_by_name(self, object_name, object_list):
+        object = next(
+            (object for object in object_list if object.name == object_name),
+            None,
+        )
+        return object
 
     def handle_eof(self):
         # process any final, unhandled chapter of cards
@@ -423,7 +558,7 @@ class Parser:
             print(issue)
 
 
-def read_file_and_dump(csv_file):
+def read_file_and_dump(csv_file, issues_only):
     with open(csv_file, "r") as file:
         reader = csv.reader(file, delimiter=";")
         data = list(reader)
@@ -434,7 +569,8 @@ def read_file_and_dump(csv_file):
         parser.process_line(line)
     parser.handle_eof()
     parser.print_issues()
-    parser.print_json()
+    if not issues_only:
+        parser.print_json()
 
 
 # Example usage
@@ -442,5 +578,10 @@ if len(sys.argv) < 2:
     print("Usage: python parser.py <csv_file>")
     sys.exit(1)
 
+issues_only = False
 csv_file = sys.argv[1]
-read_file_and_dump(csv_file)
+if len(sys.argv) >= 3:
+    if sys.argv[2] == "-issues-only":
+        issues_only=True
+
+read_file_and_dump(csv_file, issues_only)
