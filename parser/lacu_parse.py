@@ -354,7 +354,10 @@ class Parser:
             )
             self.following_subheader = False
             return
-        if line[0] == ">vocab":
+        if line[0][:6] == ">vocab":
+            if len(line[0]) > 6:
+                self.log_issue(f"vocab sections must be separated by semicolons (;)")
+                return
             # interpret vocab line
             self.insert_vocab(line[1:])
             return
