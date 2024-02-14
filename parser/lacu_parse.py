@@ -34,12 +34,13 @@ class ParsedGroup:
 
 
 class ParsedPairGroup:
-    def __init__(self, name, col_names, col_types, num_col):
+    def __init__(self, name, col_names, col_types, num_col, validity):
         self.name = name
         self.column_names = col_names
         self.column_types = col_types
         self.subgroup_checking = [None] * num_col
         self.pairs = []
+        self.valid = validity
 
 
 class ParsedChapter:
@@ -73,29 +74,30 @@ class Parser:
         self.current_card = None
 
     def process_line(self, line):
-        # print(f"PROCESS: {line}")
         self.line_index += 1
+        try:
+            # skip empty lines and comments
+            if (not line) or (line[0][:2] == "//") or (line[0][:4] == "<!--"):
+                return
 
-        # skip empty lines and comments
-        if (not line) or (line[0][:2] == "//") or (line[0][:4] == "<!--"):
-            return
+            # alter state if header encountered
+            if line[0][:2] == "# ":
+                header_str = line[0][2:]
+                self.change_state(header_str)
+                return
 
-        # alter state if header encountered
-        if line[0][:2] == "# ":
-            header_str = line[0][2:]
-            self.change_state(header_str)
-            return
-
-        if self.current_state == "ParseSelectables":
-            self.parse_selectables(line)
-        elif self.current_state == "ParseGroups":
-            self.parse_groups(line)
-        elif self.current_state == "ParsePairGroups":
-            self.parse_pairgroups(line)
-        elif self.current_state == "ParseCards":
-            self.parse_cards(line)
-        else:
-            pass  # may be on lines before or after valid headers.
+            if self.current_state == "ParseSelectables":
+                self.parse_selectables(line)
+            elif self.current_state == "ParseGroups":
+                self.parse_groups(line)
+            elif self.current_state == "ParsePairGroups":
+                self.parse_pairgroups(line)
+            elif self.current_state == "ParseCards":
+                self.parse_cards(line)
+            else:
+                pass  # may be on lines before or after valid headers.
+        except:
+            self.log_issue(f"Unidentifiable error - may be caused by prior errors")
 
     def change_state(self, str):
         # TODO: ensure all transitions are in this order
@@ -162,7 +164,8 @@ class Parser:
                 f"Number of selectable columns [{len(line)}] does not match header "
                 f"[{self.num_subheader_columns}]"
             )
-        self.current_object.selectables.append(ParsedSelectable(line))
+        else:
+            self.current_object.selectables.append(ParsedSelectable(line))
 
     def parse_groups(self, line):
         # Groups are all on one line
@@ -199,6 +202,7 @@ class Parser:
                     f"No selectable variant '{key_variant}' found in"
                     f"selectable subgroup '{subgroup_name}'"
                 )
+                return
             # check if all group keys can be found in the selectable subgroup column
             for key in keys:
                 found_key = False
@@ -235,6 +239,7 @@ class Parser:
             for section in line:
                 names.append(section.split("=")[0])
                 types.append(section.split("=")[1])
+            validity = True
             # check subheader integrity
             for name, type in zip(names, types):
                 type_category = type.split(":")[0]
@@ -244,6 +249,7 @@ class Parser:
                         self.log_issue(
                             f"Insufficient type information for column '{name}'"
                         )
+                        validity = False
                         continue
                     ## check that the subgroup exists
                     subgroup_name = type.split(":")[1]
@@ -253,21 +259,28 @@ class Parser:
                         if subgroup.name == subgroup_name:
                             found_subgroup = subgroup
                     if not found_subgroup:
+                        validity = False
                         self.log_issue(
                             f"Subgroup '{subgroup_name}' for column '{name}' not found"
                         )
                     else:
                         ## check that the variant exists in the subgroup
                         if variant_name not in found_subgroup.variant_names:
+                            validity = False
                             self.log_issue(
                                 f"Variant name '{variant_name }' not found in "
                                 f"'{subgroup_name}' for column '{name}'"
                             )
                 elif type_category != "group":
+                    validity = False
                     self.log_issue(f"Pair members must be either groups or selectables")
 
             self.current_object = ParsedPairGroup(
-                self.current_subheader_str, names, types, self.num_subheader_columns,
+                self.current_subheader_str,
+                names,
+                types,
+                self.num_subheader_columns,
+                validity,
             )
             self.following_subheader = False
             return
@@ -279,6 +292,9 @@ class Parser:
             )
         # Data integrity checking
         for count, member in enumerate(line):
+            if not self.current_object.valid:
+                self.log_issue(f"Pair not parsed as pair group is invalid")
+                return
             if self.current_object.column_types[count].split(":")[0] == "group":
                 group = self.get_object_by_name(member, self.parsed_deck.groups)
                 if not group:
@@ -290,7 +306,10 @@ class Parser:
                 if not self.current_object.subgroup_checking[count]:
                     self.current_object.subgroup_checking[count] = group.subgroup_name
                 else:
-                    if group.subgroup_name != self.current_object.subgroup_checking[count]:
+                    if (
+                        group.subgroup_name
+                        != self.current_object.subgroup_checking[count]
+                    ):
                         self.log_issue(
                             f"Group's subgroup '{group.subgroup_name}' must match subgroups "
                             f"in other groups of this column "
@@ -306,11 +325,17 @@ class Parser:
                     if subgroup.name == subgroup_name:
                         found_subgroup = subgroup
                         break  # Exit the loop once a match is found
+                if not found_subgroup:
+                    self.log_issue(f"Could not find sugbroup name '{subgroup_name}'")
+                    return
                 if found_subgroup:
                     found_key_variant_index = None
                     for count, variant_str in enumerate(found_subgroup.variant_names):
                         if variant_str == variant_name:
                             found_key_variant_index = count
+                    if not found_key_variant_index:
+                        self.log_issue(f"Did not find variant '{variant_name}'")
+                        return
                     if found_key_variant_index:
                         for variant in [
                             selectable.variants[found_key_variant_index]
@@ -323,6 +348,7 @@ class Parser:
                         f"Could not find selectable '{member}' in subgroup "
                         f"'{found_subgroup.name}', column {found_key_variant_index}"
                     )
+                    return
         self.current_object.pairs.append(line)
 
     def parse_cards(self, line):
@@ -477,9 +503,11 @@ class Parser:
                 pg_varlabel = pg[2]
 
             pair_group = next(
-                    (pair_group
+                (
+                    pair_group
                     for pair_group in self.parsed_deck.pair_groups
-                    if pair_group.name == pg_name),
+                    if pair_group.name == pg_name
+                ),
                 None,
             )
             ## check if the pair group exists
@@ -520,7 +548,9 @@ class Parser:
                         # selectable must be the same across groups, so it'll be the same
                         # as that of the first matching group in the first pair of the pairgroup
                         group_name = pair_group.pairs[0][count]
-                        found_group = self.get_object_by_name(group_name, self.parsed_deck.groups)
+                        found_group = self.get_object_by_name(
+                            group_name, self.parsed_deck.groups
+                        )
                         subgroup = self.get_object_by_name(
                             found_group.subgroup_name, self.parsed_deck.subgroups
                         )
@@ -585,6 +615,6 @@ issues_only = False
 csv_file = sys.argv[1]
 if len(sys.argv) >= 3:
     if sys.argv[2] == "-issues-only":
-        issues_only=True
+        issues_only = True
 
 read_file_and_dump(csv_file, issues_only)
