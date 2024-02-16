@@ -174,14 +174,19 @@ class Parser:
         key_variant = line[2]
         keys = line[3][1:-1].split(",")
 
-        self.check_group_integrity(subgroup_name, key_variant, keys)
+        self.check_group_integrity(subgroup_name, key_variant, keys, group_name=group_name)
 
         self.parsed_deck.groups.append(
             ParsedGroup(group_name, subgroup_name, key_variant, keys)
         )
 
-    def check_group_integrity(self, subgroup_name, key_variant, keys):
-        # TODO: duplicate checking
+    def check_group_integrity(self, subgroup_name, key_variant, keys, group_name=None):
+        # duplicate checking
+        if group_name:
+            for group in self.parsed_deck.groups:
+                if group_name == group.name:
+                    self.log_issue(f"Duplicated group name {group_name}")
+
         # Data integrity checking
         found_subgroup = None
         # check if the subgroup exists
