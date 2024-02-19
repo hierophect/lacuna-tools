@@ -2,6 +2,8 @@ import json
 import csv
 import sys
 import re
+import argparse
+import traceback
 
 
 class ParsedDeck:
@@ -61,17 +63,20 @@ class Parser:
     def __init__(self):
         self.current_state = None
         self.line_index = 0
-        self.issues = []
+
         self.current_subheader_str = None
+        self.extending_object_index = None
         self.current_object = None
         self.following_subheader = False
         self.num_subheader_columns = 0
         self.num_card_sides = 0
+        self.current_card = None
         self.parsed_deck = ParsedDeck()
         self.has_pair_groups = False
 
-        # cards are multi-line
-        self.current_card = None
+        self.issues = []
+        self.infos = []
+        self.debug = False
 
     def process_line(self, line):
         self.line_index += 1
@@ -96,8 +101,16 @@ class Parser:
                 self.parse_cards(line)
             else:
                 pass  # may be on lines before or after valid headers.
-        except:
+        except Exception as e:
+            # Get current exception information
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            # Extract and format the traceback
+            tb = traceback.extract_tb(exc_traceback)
+            # Get the last line of the traceback, which is where the exception occurred
+            filename, line, func, text = tb[-1]
             self.log_issue(f"Unidentifiable error - may be caused by prior errors")
+            if self.debug:
+                print(f"Line {line}: {e}")
 
     def change_state(self, str):
         # TODO: ensure all transitions are in this order
@@ -106,8 +119,9 @@ class Parser:
             self.current_state = "ParseSelectables"
         elif str == "Groups":
             # print("PARSING GROUPS")
-            # append leftover selectable
-            self.parsed_deck.subgroups.append(self.current_object)
+            # append leftover subgroup, if it wasn't an extension
+            if self.current_object:
+                self.parsed_deck.subgroups.append(self.current_object)
             self.current_object = None
             self.current_subheader_str = None
 
@@ -130,9 +144,6 @@ class Parser:
             self.current_state == None
             self.log_issue(f"Bad header '{str}'")
 
-    def log_issue(self, str):
-        self.issues.append((self.line_index, str))
-
     def parse_selectables(self, line):
         # TODO: duplicate checking
         if line[0][:3] == "## ":
@@ -140,7 +151,14 @@ class Parser:
             if self.current_object:
                 self.parsed_deck.subgroups.append(self.current_object)
                 self.current_object = None
+            elif self.extending_object_index != None:
+                self.extending_object_index = None
             self.current_subheader_str = line[0][3:]
+            # duplicate checking
+            for i, subgroup in enumerate(self.parsed_deck.subgroups):
+                if self.current_subheader_str == subgroup.name:
+                    self.log_info(f"Found duplicated subgroup {subgroup.name}")
+                    self.extending_object_index = i
             self.following_subheader = True
             return
 
@@ -151,10 +169,21 @@ class Parser:
                 line[0] = line[0][1:]
             else:
                 self.log_issue(f"Subheader info line not indented, needs '>'")
+            # this is used regardless of whether it's a dupe extension or not
             self.num_subheader_columns = len(line)
-            self.current_object = ParsedSelectablesSubgroup(
-                self.current_subheader_str, line
-            )
+            # if duplicate, double check the columns
+            if self.extending_object_index != None:
+                subgroup = self.parsed_deck.subgroups[self.extending_object_index]
+                if subgroup.variant_names != line:
+                    self.log_issue(
+                        f"Subgroup extension variant names '{','.join(line)}'"
+                        f" do not match prior variant names "
+                        f"'{','.join(subgroup.variant_names)}'"
+                    )
+            else:
+                self.current_object = ParsedSelectablesSubgroup(
+                    self.current_subheader_str, line
+                )
             self.following_subheader = False
             return
 
@@ -165,7 +194,24 @@ class Parser:
                 f"[{self.num_subheader_columns}]"
             )
         else:
-            self.current_object.selectables.append(ParsedSelectable(line))
+            if self.extending_object_index != None:
+                # Extend the existing subgroup with a new selectable
+                subgroup = self.parsed_deck.subgroups[self.extending_object_index]
+                parsed_selectable = ParsedSelectable(line)
+                for selectable in subgroup.selectables:
+                    if selectable.variants == parsed_selectable.variants:
+                        self.log_info(
+                            f"Found duplicate selectable '{line[0]}' while extending "
+                            f"subgroup, skipping"
+                        )
+                        return
+                self.log_info(
+                    f"Extending subgroup {subgroup.name} with selectable {','.join(line)}"
+                )
+                subgroup.selectables.append(parsed_selectable)
+            else:
+                # add selectable to new in-progress subgroup
+                self.current_object.selectables.append(ParsedSelectable(line))
 
     def parse_groups(self, line):
         # Groups are all on one line
@@ -174,19 +220,42 @@ class Parser:
         key_variant = line[2]
         keys = line[3][1:-1].split(",")
 
-        self.check_group_integrity(subgroup_name, key_variant, keys, group_name=group_name)
+        self.check_group_integrity(subgroup_name, key_variant, keys)
 
-        self.parsed_deck.groups.append(
-            ParsedGroup(group_name, subgroup_name, key_variant, keys)
-        )
+        # Extend or fail for duplicate groups
+        found_duplicate = False
+        for i, group in enumerate(self.parsed_deck.groups):
+            if group_name == group.name:
+                found_duplicate = True
+                if group.subgroup_name != subgroup_name:
+                    self.log_issue(
+                        f"Expanding group with subgroup {subgroup_name}"
+                        f"does not match prior subgroup {group.subgroup_name}"
+                    )
+                    return
+                elif group.key_variant_name != key_variant:
+                    self.log_issue(
+                        f"Expanding group with key variant {key_variant}"
+                        f"does not match prior key variant {group.key_variant_name}"
+                    )
+                    return
+                else:
+                    # exists and new one is a valid extension. Extend it.
+                    # we already know integrity is good from before
+                    extended = False
+                    for key in keys:
+                        if key not in group.keys:
+                            self.log_info(f"Extended group {group_name} with key {key}")
+                            self.parsed_deck.groups[i].keys.append(key)
+                            extended = True
+                    if not extended:
+                        self.log_info(f"Duplicate group {group_name} had no new keys")
+        if not found_duplicate:
+            self.parsed_deck.groups.append(
+                ParsedGroup(group_name, subgroup_name, key_variant, keys)
+            )
 
-    def check_group_integrity(self, subgroup_name, key_variant, keys, group_name=None):
-        # duplicate checking
-        if group_name:
-            for group in self.parsed_deck.groups:
-                if group_name == group.name:
-                    self.log_issue(f"Duplicated group name {group_name}")
-
+    def check_group_integrity(self, subgroup_name, key_variant, keys):
         # Data integrity checking
         found_subgroup = None
         # check if the subgroup exists
@@ -221,8 +290,6 @@ class Parser:
                     )
 
     def parse_pairgroups(self, line):
-        # print(line)
-        # TODO: duplicate checking
         # Obtain pairgroup name, prep new structure
         if line[0][:3] == "## ":
             ## finalize previous pairgroup, if it exists
@@ -279,6 +346,15 @@ class Parser:
                 elif type_category != "group":
                     validity = False
                     self.log_issue(f"Pair members must be either groups or selectables")
+
+            # Check for duplicates (simple)
+            # TODO: allow pairgroup extension across files
+            for pairgroup in self.parsed_deck.pair_groups:
+                if self.current_subheader_str == pairgroup.name:
+                    self.log_issue(
+                        f"Extending pairgroup {pairgroup.name} is not supported"
+                    )
+                    validity = False
 
             self.current_object = ParsedPairGroup(
                 self.current_subheader_str,
@@ -584,10 +660,26 @@ class Parser:
     def handle_eof(self):
         # process any final, unhandled chapter of cards
         self.parsed_deck.chapters.append(self.current_object)
+        # reset all working values
+        self.current_state = None
+        self.line_index = 0
+        self.current_subheader_str = None
+        self.extending_object_index = None
+        self.current_object = None
+        self.following_subheader = False
+        self.num_subheader_columns = 0
+        self.num_card_sides = 0
+        self.current_card = None
 
     def print_json(self):
         json_data = json.dumps(self.parsed_deck, default=lambda o: o.__dict__, indent=4)
         print(json_data)
+
+    def log_issue(self, str):
+        self.issues.append((self.line_index, str))
+
+    def log_info(self, str):
+        self.infos.append((self.line_index, str))
 
     def print_issues(self):
         if len(self.issues) > 0:
@@ -596,30 +688,81 @@ class Parser:
             print(issue)
 
 
-def read_file_and_dump(csv_file, issues_only):
-    with open(csv_file, "r") as file:
+def parse_file_lines(lacparser: Parser, file_str, verbose):
+    with open(file_str, "r") as file:
         reader = csv.reader(file, delimiter=";")
         data = list(reader)
 
-    parser = Parser()
-    for count, line in enumerate(data):
-        # print(f"parsing line {count}")
-        parser.process_line(line)
-    parser.handle_eof()
-    parser.print_issues()
-    if not issues_only:
-        parser.print_json()
+    lacparser.line_index = 0
+    for line in data:
+        if verbose:
+            print(",".join(line))
+        lacparser.process_line(line)
+    lacparser.handle_eof()
 
 
-# Example usage
-if len(sys.argv) < 2:
-    print("Usage: python parser.py <csv_file>")
-    sys.exit(1)
+if __name__ == "__main__":
+    argparser = argparse.ArgumentParser(description="Lacuna Parser")
+    argparser.add_argument(
+        "primary_file",
+        metavar="FILE",
+        help="Current deck file to scan for issues",
+    )
+    argparser.add_argument(
+        "-f",
+        "--prior-files",
+        metavar="PRIOR_FILE",
+        nargs="+",
+        help="Preceding decks to supply data to the current file",
+    )
+    argparser.add_argument(
+        "-i",
+        "--issues-only",
+        action="store_true",
+        help="Only print list of issues, excluding JSON output",
+    )
+    argparser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print lines as they're processed"
+    )
+    argparser.add_argument(
+        "-d",
+        "--debug",
+        action="store_true",
+        help="Print debug information"
+    )
+    argparser.add_argument(
+        "-l",
+        "--list-infos",
+        action="store_true",
+        help="Show additional information about deck redundancy",
+    )
 
-issues_only = False
-csv_file = sys.argv[1]
-if len(sys.argv) >= 3:
-    if sys.argv[2] == "-issues-only":
-        issues_only = True
+    args = argparser.parse_args()
+    lacparser = Parser()
+    if args.debug:
+        lacparser.debug = True
+    if args.prior_files:
+        for count, file_str in enumerate(args.prior_files):
+            if args.list_infos:
+                print(f"PARSING PRIOR FILE: {file_str}")
+            parse_file_lines(lacparser, file_str, args.verbose)
+            if lacparser.issues:
+                print(
+                    f"Error: precedent file {count} contains issues before primary file"
+                )
+                exit()
 
-read_file_and_dump(csv_file, issues_only)
+    if args.list_infos:
+        print(f"PARSING MAIN FILE: {args.primary_file}")
+    parse_file_lines(lacparser, args.primary_file, args.verbose)
+
+    lacparser.print_issues()
+    if not args.issues_only:
+        lacparser.print_json()
+    if args.list_infos:
+        print("INFO:")
+        for info in lacparser.infos:
+            print(info)
