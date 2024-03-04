@@ -401,29 +401,30 @@ class Parser:
                 variant_name = self.current_object.column_types[count].split(":")[2]
                 found_subgroup = None
                 found_selectable = False
-                # check if the subgroup exists
-                for subgroup in self.parsed_deck.subgroups:
-                    if subgroup.name == subgroup_name:
-                        found_subgroup = subgroup
-                        break  # Exit the loop once a match is found
-                if not found_subgroup:
-                    self.log_issue(f"Could not find sugbroup name '{subgroup_name}'")
-                    return
+                # fetch the subgroup by name. We've already validated it exists in the header.
+                found_subgroup = next(
+                    (
+                        obj
+                        for obj in self.parsed_deck.subgroups
+                        if obj.name == subgroup_name
+                    ),
+                    None,
+                )
                 if found_subgroup:
                     found_key_variant_index = None
                     for count, variant_str in enumerate(found_subgroup.variant_names):
                         if variant_str == variant_name:
                             found_key_variant_index = count
-                    if not found_key_variant_index:
-                        self.log_issue(f"Did not find variant '{variant_name}'")
-                        return
-                    if found_key_variant_index:
+                    if found_key_variant_index != None:
                         for variant in [
                             selectable.variants[found_key_variant_index]
                             for selectable in found_subgroup.selectables
                         ]:
                             if variant == member:
                                 found_selectable = True
+                    else:
+                        self.log_issue(f"Uncaught error with pg subheader")
+                        return
                 if not found_selectable:
                     self.log_issue(
                         f"Could not find selectable '{member}' in subgroup "
@@ -688,14 +689,14 @@ class Parser:
             print(issue)
 
 
-def parse_file_lines(lacparser: Parser, file_str, verbose):
+def parse_file_lines(lacparser: Parser, file_str, verbose, primary=False):
     with open(file_str, "r") as file:
         reader = csv.reader(file, delimiter=";")
         data = list(reader)
 
     lacparser.line_index = 0
     for line in data:
-        if verbose:
+        if verbose and primary:
             print(",".join(line))
         lacparser.process_line(line)
     lacparser.handle_eof()
@@ -722,16 +723,10 @@ if __name__ == "__main__":
         help="Only print list of issues, excluding JSON output",
     )
     argparser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Print lines as they're processed"
+        "-v", "--verbose", action="store_true", help="Print lines as they're processed"
     )
     argparser.add_argument(
-        "-d",
-        "--debug",
-        action="store_true",
-        help="Print debug information"
+        "-d", "--debug", action="store_true", help="Print debug information"
     )
     argparser.add_argument(
         "-l",
@@ -748,7 +743,7 @@ if __name__ == "__main__":
         for count, file_str in enumerate(args.prior_files):
             if args.list_infos:
                 print(f"PARSING PRIOR FILE: {file_str}")
-            parse_file_lines(lacparser, file_str, args.verbose)
+            parse_file_lines(lacparser, file_str, args.verbose, primary=False)
             if lacparser.issues:
                 print(
                     f"Error: precedent file {count} contains issues before primary file"
@@ -757,7 +752,7 @@ if __name__ == "__main__":
 
     if args.list_infos:
         print(f"PARSING MAIN FILE: {args.primary_file}")
-    parse_file_lines(lacparser, args.primary_file, args.verbose)
+    parse_file_lines(lacparser, args.primary_file, args.verbose, primary=True)
 
     lacparser.print_issues()
     if not args.issues_only:
