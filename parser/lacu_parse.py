@@ -214,7 +214,10 @@ class Parser:
                 self.current_object.selectables.append(ParsedSelectable(line))
 
     def parse_groups(self, line):
-        # Groups are all on one line
+        # Groups are all on one line, and always 4 entries
+        if len(line) != 4:
+            self.log_issue("Wrong separators, check semicolon use")
+            return
         group_name = line[0]
         subgroup_name = line[1]
         key_variant = line[2]
@@ -463,8 +466,8 @@ class Parser:
             self.following_subheader = False
             return
         if line[0][:6] == ">vocab":
-            if len(line[0]) > 6:
-                self.log_issue(f"vocab sections must be separated by semicolons (;)")
+            if len(line) != 4:
+                self.log_issue(f"Wrong separators, check semicolon use")
                 return
             # interpret vocab line
             self.insert_vocab(line[1:])
