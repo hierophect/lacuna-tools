@@ -8,13 +8,13 @@ import traceback
 
 class ParsedDeck:
     def __init__(self):
-        self.subgroups = []
+        self.categories = []
         self.groups = []
         self.pair_groups = []
         self.chapters = []
 
 
-class ParsedSelectablesSubgroup:
+class ParsedSelectableCategory:
     def __init__(self, name_string, columns_tuple):
         self.name = name_string
         self.variant_names = columns_tuple
@@ -28,9 +28,9 @@ class ParsedSelectable:
 
 
 class ParsedGroup:
-    def __init__(self, name, subgroup_name, key_variant, keys):
+    def __init__(self, name, category_name, key_variant, keys):
         self.name = name
-        self.subgroup_name = subgroup_name
+        self.category_name = category_name
         self.key_variant_name = key_variant
         self.keys = keys
 
@@ -40,7 +40,7 @@ class ParsedPairGroup:
         self.name = name
         self.column_names = col_names
         self.column_types = col_types
-        self.subgroup_checking = [None] * num_col
+        self.category_checking = [None] * num_col
         self.pairs = []
         self.valid = validity
 
@@ -50,11 +50,11 @@ class ParsedChapter:
         self.name = name
         self.column_variants = col_variants
         self.forced_first_side = forced_idx
-        self.cards = []
+        self.templates = []
         self.vocab = []
 
 
-class ParsedCard:
+class ParsedTemplate:
     def __init__(self):
         self.sides = []
 
@@ -69,8 +69,8 @@ class Parser:
         self.current_object = None
         self.following_subheader = False
         self.num_subheader_columns = 0
-        self.num_card_sides = 0
-        self.current_card = None
+        self.num_template_sides = 0
+        self.current_template = None
         self.parsed_deck = ParsedDeck()
         self.has_pair_groups = False
 
@@ -97,8 +97,8 @@ class Parser:
                 self.parse_groups(line)
             elif self.current_state == "ParsePairGroups":
                 self.parse_pairgroups(line)
-            elif self.current_state == "ParseCards":
-                self.parse_cards(line)
+            elif self.current_state == "ParseTemplates":
+                self.parse_templates(line)
             else:
                 pass  # may be on lines before or after valid headers.
         except Exception as e:
@@ -119,9 +119,9 @@ class Parser:
             self.current_state = "ParseSelectables"
         elif str == "Groups":
             # print("PARSING GROUPS")
-            # append leftover subgroup, if it wasn't an extension
+            # append leftover category, if it wasn't an extension
             if self.current_object:
-                self.parsed_deck.subgroups.append(self.current_object)
+                self.parsed_deck.categories.append(self.current_object)
             self.current_object = None
             self.current_subheader_str = None
 
@@ -131,7 +131,7 @@ class Parser:
             # groups do not have leftovers
             self.has_pair_groups = True
             self.current_state = "ParsePairGroups"
-        elif str == "Cards":
+        elif str == "Templates":
             # print("PARSING CARDS")
             # append leftover pairgroup
             if self.has_pair_groups:
@@ -139,7 +139,7 @@ class Parser:
             self.current_subheader_str = None
             self.current_object = None
 
-            self.current_state = "ParseCards"
+            self.current_state = "ParseTemplates"
         else:
             self.current_state == None
             self.log_issue(f"Bad header '{str}'")
@@ -147,17 +147,17 @@ class Parser:
     def parse_selectables(self, line):
         # TODO: duplicate checking
         if line[0][:3] == "## ":
-            ## finalize previous subgroup, if it exists
+            ## finalize previous category, if it exists
             if self.current_object:
-                self.parsed_deck.subgroups.append(self.current_object)
+                self.parsed_deck.categories.append(self.current_object)
                 self.current_object = None
             elif self.extending_object_index != None:
                 self.extending_object_index = None
             self.current_subheader_str = line[0][3:]
             # duplicate checking
-            for i, subgroup in enumerate(self.parsed_deck.subgroups):
-                if self.current_subheader_str == subgroup.name:
-                    self.log_info(f"Found duplicated subgroup {subgroup.name}")
+            for i, category in enumerate(self.parsed_deck.categories):
+                if self.current_subheader_str == category.name:
+                    self.log_info(f"Found duplicated category {category.name}")
                     self.extending_object_index = i
             self.following_subheader = True
             return
@@ -173,15 +173,15 @@ class Parser:
             self.num_subheader_columns = len(line)
             # if duplicate, double check the columns
             if self.extending_object_index != None:
-                subgroup = self.parsed_deck.subgroups[self.extending_object_index]
-                if subgroup.variant_names != line:
+                category = self.parsed_deck.categories[self.extending_object_index]
+                if category.variant_names != line:
                     self.log_issue(
-                        f"Subgroup extension variant names '{','.join(line)}'"
+                        f"Category extension variant names '{','.join(line)}'"
                         f" do not match prior variant names "
-                        f"'{','.join(subgroup.variant_names)}'"
+                        f"'{','.join(category.variant_names)}'"
                     )
             else:
-                self.current_object = ParsedSelectablesSubgroup(
+                self.current_object = ParsedSelectableCategory(
                     self.current_subheader_str, line
                 )
             self.following_subheader = False
@@ -195,22 +195,22 @@ class Parser:
             )
         else:
             if self.extending_object_index != None:
-                # Extend the existing subgroup with a new selectable
-                subgroup = self.parsed_deck.subgroups[self.extending_object_index]
+                # Extend the existing category with a new selectable
+                category = self.parsed_deck.categories[self.extending_object_index]
                 parsed_selectable = ParsedSelectable(line)
-                for selectable in subgroup.selectables:
+                for selectable in category.selectables:
                     if selectable.variants == parsed_selectable.variants:
                         self.log_info(
                             f"Found duplicate selectable '{line[0]}' while extending "
-                            f"subgroup, skipping"
+                            f"category, skipping"
                         )
                         return
                 self.log_info(
-                    f"Extending subgroup {subgroup.name} with selectable {','.join(line)}"
+                    f"Extending category {category.name} with selectable {','.join(line)}"
                 )
-                subgroup.selectables.append(parsed_selectable)
+                category.selectables.append(parsed_selectable)
             else:
-                # add selectable to new in-progress subgroup
+                # add selectable to new in-progress category
                 self.current_object.selectables.append(ParsedSelectable(line))
 
     def parse_groups(self, line):
@@ -219,21 +219,21 @@ class Parser:
             self.log_issue("Wrong separators, check semicolon use")
             return
         group_name = line[0]
-        subgroup_name = line[1]
+        category_name = line[1]
         key_variant = line[2]
         keys = line[3][1:-1].split(",")
 
-        self.check_group_integrity(subgroup_name, key_variant, keys)
+        self.check_group_integrity(category_name, key_variant, keys)
 
         # Extend or fail for duplicate groups
         found_duplicate = False
         for i, group in enumerate(self.parsed_deck.groups):
             if group_name == group.name:
                 found_duplicate = True
-                if group.subgroup_name != subgroup_name:
+                if group.category_name != category_name:
                     self.log_issue(
-                        f"Expanding group with subgroup {subgroup_name}"
-                        f"does not match prior subgroup {group.subgroup_name}"
+                        f"Expanding group with category {category_name}"
+                        f"does not match prior category {group.category_name}"
                     )
                     return
                 elif group.key_variant_name != key_variant:
@@ -255,41 +255,41 @@ class Parser:
                         self.log_info(f"Duplicate group {group_name} had no new keys")
         if not found_duplicate:
             self.parsed_deck.groups.append(
-                ParsedGroup(group_name, subgroup_name, key_variant, keys)
+                ParsedGroup(group_name, category_name, key_variant, keys)
             )
 
-    def check_group_integrity(self, subgroup_name, key_variant, keys):
+    def check_group_integrity(self, category_name, key_variant, keys):
         # Data integrity checking
-        found_subgroup = None
-        # check if the subgroup exists
-        for subgroup in self.parsed_deck.subgroups:
-            if subgroup.name == subgroup_name:
-                found_subgroup = subgroup
+        found_category = None
+        # check if the category exists
+        for category in self.parsed_deck.categories:
+            if category.name == category_name:
+                found_category = category
                 break  # Exit the loop once a match is found
-        if not found_subgroup:
-            self.log_issue(f"No selectable subgroup '{subgroup_name}' found for group")
+        if not found_category:
+            self.log_issue(f"No selectable category '{category_name}' found for group")
         else:
-            # check if the key variant exists in the subgroup
+            # check if the key variant exists in the category
             found_key_variant_index = None
-            for count, variant_name in enumerate(found_subgroup.variant_names):
+            for count, variant_name in enumerate(found_category.variant_names):
                 if variant_name == key_variant:
                     found_key_variant_index = count
             if found_key_variant_index == None:
                 self.log_issue(
                     f"No selectable variant '{key_variant}' found in"
-                    f"selectable subgroup '{subgroup_name}'"
+                    f"selectable category '{category_name}'"
                 )
                 return
-            # check if all group keys can be found in the selectable subgroup column
+            # check if all group keys can be found in the selectable category column
             for key in keys:
                 found_key = False
-                for selectable in found_subgroup.selectables:
+                for selectable in found_category.selectables:
                     if key == selectable.variants[found_key_variant_index]:
                         found_key = True
                 if not found_key:
                     self.log_issue(
                         f"No selectable '{key}' under column '{key_variant}' "
-                        f"found in selectable subgroup '{subgroup_name}'"
+                        f"found in selectable category '{category_name}'"
                     )
 
     def parse_pairgroups(self, line):
@@ -326,25 +326,25 @@ class Parser:
                         )
                         validity = False
                         continue
-                    ## check that the subgroup exists
-                    subgroup_name = type.split(":")[1]
+                    ## check that the category exists
+                    category_name = type.split(":")[1]
                     variant_name = type.split(":")[2]
-                    found_subgroup = False
-                    for subgroup in self.parsed_deck.subgroups:
-                        if subgroup.name == subgroup_name:
-                            found_subgroup = subgroup
-                    if not found_subgroup:
+                    found_category = False
+                    for category in self.parsed_deck.categories:
+                        if category.name == category_name:
+                            found_category = category
+                    if not found_category:
                         validity = False
                         self.log_issue(
-                            f"Subgroup '{subgroup_name}' for column '{name}' not found"
+                            f"Category '{category_name}' for column '{name}' not found"
                         )
                     else:
-                        ## check that the variant exists in the subgroup
-                        if variant_name not in found_subgroup.variant_names:
+                        ## check that the variant exists in the category
+                        if variant_name not in found_category.variant_names:
                             validity = False
                             self.log_issue(
                                 f"Variant name '{variant_name }' not found in "
-                                f"'{subgroup_name}' for column '{name}'"
+                                f"'{category_name}' for column '{name}'"
                             )
                 elif type_category != "group":
                     validity = False
@@ -387,41 +387,41 @@ class Parser:
                     )
                     return
                 # if not member in [group.name for group in self.parsed_deck.groups]:
-                if not self.current_object.subgroup_checking[count]:
-                    self.current_object.subgroup_checking[count] = group.subgroup_name
+                if not self.current_object.category_checking[count]:
+                    self.current_object.category_checking[count] = group.category_name
                 else:
                     if (
-                        group.subgroup_name
-                        != self.current_object.subgroup_checking[count]
+                        group.category_name
+                        != self.current_object.category_checking[count]
                     ):
                         self.log_issue(
-                            f"Group's subgroup '{group.subgroup_name}' must match subgroups "
+                            f"Group's category '{group.category_name}' must match categories "
                             f"in other groups of this column "
-                            f"({self.current_object.subgroup_checking[count]})"
+                            f"({self.current_object.category_checking[count]})"
                         )
             if self.current_object.column_types[count].split(":")[0] == "selectable":
-                subgroup_name = self.current_object.column_types[count].split(":")[1]
+                category_name = self.current_object.column_types[count].split(":")[1]
                 variant_name = self.current_object.column_types[count].split(":")[2]
-                found_subgroup = None
+                found_category = None
                 found_selectable = False
-                # fetch the subgroup by name. We've already validated it exists in the header.
-                found_subgroup = next(
+                # fetch the category by name. We've already validated it exists in the header.
+                found_category = next(
                     (
                         obj
-                        for obj in self.parsed_deck.subgroups
-                        if obj.name == subgroup_name
+                        for obj in self.parsed_deck.categories
+                        if obj.name == category_name
                     ),
                     None,
                 )
-                if found_subgroup:
+                if found_category:
                     found_key_variant_index = None
-                    for count, variant_str in enumerate(found_subgroup.variant_names):
+                    for count, variant_str in enumerate(found_category.variant_names):
                         if variant_str == variant_name:
                             found_key_variant_index = count
                     if found_key_variant_index != None:
                         for variant in [
                             selectable.variants[found_key_variant_index]
-                            for selectable in found_subgroup.selectables
+                            for selectable in found_category.selectables
                         ]:
                             if variant == member:
                                 found_selectable = True
@@ -430,13 +430,13 @@ class Parser:
                         return
                 if not found_selectable:
                     self.log_issue(
-                        f"Could not find selectable '{member}' in subgroup "
-                        f"'{found_subgroup.name}', column {found_key_variant_index}"
+                        f"Could not find selectable '{member}' in category "
+                        f"'{found_category.name}', column {found_key_variant_index}"
                     )
                     return
         self.current_object.pairs.append(line)
 
-    def parse_cards(self, line):
+    def parse_templates(self, line):
         # Obtain pairgroup name, prep new structure
         if line[0][:3] == "## ":
             ## finalize previous chapter, if it exists
@@ -474,59 +474,59 @@ class Parser:
             return
         if line[0][0] == "{":
             # TODO detect errant text outside brackets
-            self.num_card_sides = 0
-            self.current_card = ParsedCard()
+            self.num_template_sides = 0
+            self.current_template = ParsedTemplate()
             return
         elif line[0][0] == "}":
-            if self.num_card_sides != self.num_subheader_columns:
+            if self.num_template_sides != self.num_subheader_columns:
                 self.log_issue(
-                    f"Number of card sides [{self.num_card_sides}] does not "
+                    f"Number of template sides [{self.num_template_sides}] does not "
                     f"match header [{self.num_subheader_columns}]"
                 )
-            self.current_object.cards.append(self.current_card)
+            self.current_object.templates.append(self.current_template)
             return
         else:
             # TODO: check vocab integrity
-            # cards with {} format do not use separators
+            # templates with {} format do not use separators
             line_str = "".join(line)
             # trim the preceding tab, if it exists
             line_str.lstrip()
 
-            # figure out remap of card side labels for forced first sides
+            # figure out remap of template side labels for forced first sides
             is_forced_first = False
             true_label_index = 0
-            if self.num_card_sides == self.current_object.forced_first_side:
+            if self.num_template_sides == self.current_object.forced_first_side:
                 is_forced_first = True
                 true_label_index = 0
-            elif self.num_card_sides < self.current_object.forced_first_side:
-                true_label_index = self.num_card_sides + 1
+            elif self.num_template_sides < self.current_object.forced_first_side:
+                true_label_index = self.num_template_sides + 1
             else:
-                true_label_index = self.num_card_sides
+                true_label_index = self.num_template_sides
 
             # data integrity
             default = self.current_object.column_variants[true_label_index]
-            if self.check_card_side_integrity(line_str, default):
+            if self.check_template_side_integrity(line_str, default):
                 if is_forced_first:
-                    self.current_card.sides.insert(0, line_str)
+                    self.current_template.sides.insert(0, line_str)
                 else:
-                    self.current_card.sides.append(line_str)
+                    self.current_template.sides.append(line_str)
 
-            self.num_card_sides += 1
+            self.num_template_sides += 1
 
     def insert_vocab(self, line):
         # Groups are all on one line
-        subgroup_name = line[0]
+        category_name = line[0]
         key_variant = line[1]
         keys = line[2][1:-1].split(",")
 
-        self.check_group_integrity(subgroup_name, key_variant, keys)
+        self.check_group_integrity(category_name, key_variant, keys)
 
         self.current_object.vocab.append(
-            ParsedGroup("vocab", subgroup_name, key_variant, keys)
+            ParsedGroup("vocab", category_name, key_variant, keys)
         )
         return
 
-    def check_card_side_integrity(self, text, default):
+    def check_template_side_integrity(self, text, default):
         if default[0] == "~":
             default = default[1:]
         replaceables = re.findall(r"\[(.*?)\]", text)
@@ -546,12 +546,12 @@ class Parser:
                 self.log_issue(f"No group '{gv[0]}' found for side")
                 integrity_good = False
             else:
-                subgroup = self.get_object_by_name(
-                    found_group.subgroup_name, self.parsed_deck.subgroups
+                category = self.get_object_by_name(
+                    found_group.category_name, self.parsed_deck.categories
                 )
-                if not gv[1] in subgroup.variant_names:
+                if not gv[1] in category.variant_names:
                     self.log_issue(
-                        f"No variant '{gv[1]}' in subgroup '{subgroup.name}', used "
+                        f"No variant '{gv[1]}' in category '{category.name}', used "
                         f"in group '{gv[0]}'"
                     )
                     integrity_good = False
@@ -572,7 +572,7 @@ class Parser:
                 integrity_good = False
             pg_name = pg[0]
             # only allow one pair group per side
-            # TODO: it should be only one per card, too, but that'd be harder to mess up
+            # TODO: it should be only one per template, too, but that'd be harder to mess up
             if not first_pg_name:
                 first_pg_name = pg_name
             else:
@@ -612,21 +612,21 @@ class Parser:
                     cata = type[0]
                     # TODO: check if selectable variant label is valid
                     if cata == "selectable":
-                        subgroup_name = type[1]
-                        subgroup = self.get_object_by_name(
-                            subgroup_name, self.parsed_deck.subgroups
+                        category_name = type[1]
+                        category = self.get_object_by_name(
+                            category_name, self.parsed_deck.categories
                         )
-                        # don't check if subgroup exists, we already did
+                        # don't check if category exists, we already did
                         if pg_varlabel:
-                            if not pg_varlabel in subgroup.variant_names:
+                            if not pg_varlabel in category.variant_names:
                                 self.log_issue(
-                                    f"No variant in '{subgroup_name}' named "
+                                    f"No variant in '{category_name}' named "
                                     f"'{pg_varlabel}'"
                                 )
                         else:
-                            if not default in subgroup.variant_names:
+                            if not default in category.variant_names:
                                 self.log_issue(
-                                    f"Autoassigned variant for '{subgroup_name}' "
+                                    f"Autoassigned variant for '{category_name}' "
                                     f"does not match '{default}'"
                                 )
                     elif cata == "group":
@@ -636,19 +636,19 @@ class Parser:
                         found_group = self.get_object_by_name(
                             group_name, self.parsed_deck.groups
                         )
-                        subgroup = self.get_object_by_name(
-                            found_group.subgroup_name, self.parsed_deck.subgroups
+                        category = self.get_object_by_name(
+                            found_group.category_name, self.parsed_deck.categories
                         )
                         if pg_varlabel:
-                            if not pg_varlabel in subgroup.variant_names:
+                            if not pg_varlabel in category.variant_names:
                                 self.log_issue(
-                                    f"No variant for group's subgroup '{subgroup.name}' named "
+                                    f"No variant for group's category '{category.name}' named "
                                     f"'{pg_varlabel}'"
                                 )
                         else:
-                            if not default in subgroup.variant_names:
+                            if not default in category.variant_names:
                                 self.log_issue(
-                                    f"Autoassigned variant for group '{subgroup.name}' "
+                                    f"Autoassigned variant for group '{category.name}' "
                                     f"does not match '{default}'"
                                 )
 
@@ -662,7 +662,7 @@ class Parser:
         return object
 
     def handle_eof(self):
-        # process any final, unhandled chapter of cards
+        # process any final, unhandled chapter of templates
         self.parsed_deck.chapters.append(self.current_object)
         # reset all working values
         self.current_state = None
@@ -672,8 +672,8 @@ class Parser:
         self.current_object = None
         self.following_subheader = False
         self.num_subheader_columns = 0
-        self.num_card_sides = 0
-        self.current_card = None
+        self.num_template_sides = 0
+        self.current_template = None
 
     def print_json(self):
         json_data = json.dumps(self.parsed_deck, default=lambda o: o.__dict__, indent=4)
