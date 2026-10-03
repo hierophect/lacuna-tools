@@ -1,0 +1,212 @@
+{
+  "categories": [
+    {
+      "name": "person",
+      "variant_names": [
+        "english",
+        "japanese"
+      ],
+      "num_variants": 2,
+      "selectables": [
+        {
+          "variants": [
+            "Alice",
+            "アリス"
+          ]
+        },
+        {
+          "variants": [
+            "Bob",
+            "ボブ"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "countable_noun",
+      "variant_names": [
+        "english",
+        "e_plural",
+        "japanese"
+      ],
+      "num_variants": 3,
+      "selectables": [
+        {
+          "variants": [
+            "apple",
+            "apples",
+            "りんご"
+          ]
+        },
+        {
+          "variants": [
+            "banana",
+            "bananas",
+            "バナナ"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "color",
+      "variant_names": [
+        "english",
+        "japanese"
+      ],
+      "num_variants": 2,
+      "selectables": [
+        {
+          "variants": [
+            "blue",
+            "青"
+          ]
+        },
+        {
+          "variants": [
+            "red",
+            "赤"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "phrase",
+      "variant_names": [
+        "key",
+        "english",
+        "japanese"
+      ],
+      "num_variants": 3,
+      "selectables": [
+        {
+          "variants": [
+            "greeting",
+            "She said \"hello\"; then left.",
+            "彼女は言いました。"
+          ]
+        }
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "_alice",
+      "category_name": "person",
+      "key_variant_name": "english",
+      "keys": [
+        "Alice"
+      ]
+    },
+    {
+      "name": "people",
+      "category_name": "person",
+      "key_variant_name": "english",
+      "keys": [
+        "Alice",
+        "Bob"
+      ]
+    },
+    {
+      "name": "fruits",
+      "category_name": "countable_noun",
+      "key_variant_name": "english",
+      "keys": [
+        "apple",
+        "banana"
+      ]
+    },
+    {
+      "name": "colors",
+      "category_name": "color",
+      "key_variant_name": "english",
+      "keys": [
+        "blue",
+        "red"
+      ]
+    },
+    {
+      "name": "greetings",
+      "category_name": "phrase",
+      "key_variant_name": "key",
+      "keys": [
+        "greeting"
+      ]
+    }
+  ],
+  "pair_groups": [
+    {
+      "name": "wrong_colors",
+      "column_names": [
+        "object",
+        "color"
+      ],
+      "column_types": [
+        "group",
+        "selectable:color:english"
+      ],
+      "category_checking": [
+        "countable_noun",
+        null
+      ],
+      "pairs": [
+        [
+          "fruits",
+          "blue"
+        ]
+      ],
+      "valid": true
+    }
+  ],
+  "chapters": [
+    {
+      "name": "lesson_1",
+      "column_variants": [
+        "japanese",
+        "english",
+        "~notes"
+      ],
+      "forced_first_side": 1,
+      "templates": [
+        {
+          "sides": [
+            "<wrong_colors:object:japanese>は<wrong_colors:color:japanese>ではありません。",
+            "<wrong_colors:object:e_plural> are not <wrong_colors:color:english>.",
+            "Contrast: \"not blue\"; vocabulary note."
+          ]
+        },
+        {
+          "sides": [
+            "[greetings:japanese]",
+            "[greetings:english]",
+            "[greetings:english]"
+          ]
+        },
+        {
+          "sides": [
+            "[_alice:japanese]は勉強します。",
+            "[_alice:english] studies.",
+            "Person: [_alice:english]."
+          ]
+        }
+      ],
+      "vocab": [
+        {
+          "name": "vocab",
+          "category_name": "countable_noun",
+          "key_variant_name": "english",
+          "keys": [
+            "banana"
+          ]
+        },
+        {
+          "name": "vocab",
+          "category_name": "color",
+          "key_variant_name": "english",
+          "keys": [
+            "blue"
+          ]
+        }
+      ]
+    }
+  ]
+}

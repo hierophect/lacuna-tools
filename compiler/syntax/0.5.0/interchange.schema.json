@@ -1,0 +1,286 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:lacuna:deck-language:0.5.0:interchange",
+  "title": "Lacuna Deck Language 0.5.0 compiled deck",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "categories",
+    "groups",
+    "pair_groups",
+    "chapters"
+  ],
+  "properties": {
+    "categories": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/category"
+      }
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/group"
+      }
+    },
+    "pair_groups": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/pairgroup"
+      }
+    },
+    "chapters": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/chapter"
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[_A-Za-z][_A-Za-z0-9]*$"
+    },
+    "content": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selectable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "variants"
+      ],
+      "properties": {
+        "variants": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/content"
+          }
+        }
+      }
+    },
+    "category": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "variant_names",
+        "num_variants",
+        "selectables"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "variant_names": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "num_variants": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "selectables": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/selectable"
+          }
+        }
+      }
+    },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "category_name",
+        "key_variant_name",
+        "keys"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "category_name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "key_variant_name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "keys": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/content"
+          }
+        }
+      }
+    },
+    "pairgroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "column_names",
+        "column_types",
+        "category_checking",
+        "pairs",
+        "valid"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "column_names": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "column_types": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "string",
+            "pattern": "^(group|selectable:[_A-Za-z][_A-Za-z0-9]*:[_A-Za-z][_A-Za-z0-9]*)$"
+          }
+        },
+        "category_checking": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "pairs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "$ref": "#/$defs/content"
+            }
+          }
+        },
+        "valid": {
+          "const": true
+        }
+      }
+    },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sides"
+      ],
+      "properties": {
+        "sides": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/content"
+          }
+        }
+      }
+    },
+    "vocab": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "category_name",
+        "key_variant_name",
+        "keys"
+      ],
+      "properties": {
+        "name": {
+          "const": "vocab"
+        },
+        "category_name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "key_variant_name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "keys": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/content"
+          }
+        }
+      }
+    },
+    "chapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "column_variants",
+        "forced_first_side",
+        "templates",
+        "vocab"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^\\S(?:.*\\S)?$"
+        },
+        "column_variants": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "prefixItems": [
+            {
+              "type": "string",
+              "pattern": "^[_A-Za-z][_A-Za-z0-9]*$"
+            }
+          ],
+          "items": {
+            "type": "string",
+            "pattern": "^~?[_A-Za-z][_A-Za-z0-9]*$"
+          }
+        },
+        "forced_first_side": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "templates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/template"
+          }
+        },
+        "vocab": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/vocab"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+# Selectables
+
+## item
+>key;english
+apple;apple
+banana;banana
+
+# Groups
+food;item;key;{apple,banana}
+
+# Templates
+
+## lesson_2
+>english
+>vocab;item;key;{apple}
+>vocab;item;key;{banana}
+
+{
+    [food:english] is ready.
+}

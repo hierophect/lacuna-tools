@@ -1,0 +1,59 @@
+// Complete Lacuna Deck Language 0.5.0 example.
+# Selectables
+
+## person
+>english;japanese
+Alice;アリス
+Bob;ボブ
+
+## countable_noun
+>english;e_plural;japanese
+apple;apples;りんご
+banana;bananas;バナナ
+
+## color
+>english;japanese
+blue;青
+red;赤
+
+## phrase
+>key;english;japanese
+greeting;"She said ""hello""; then left.";彼女は言いました。
+
+# Groups
+_alice;person;english;{Alice}
+people;person;english;{Alice,Bob}
+fruits;countable_noun;english;{apple,banana}
+colors;color;english;{blue,red}
+greetings;phrase;key;{greeting}
+
+# Pair Groups
+
+## wrong_colors
+>object=group;color=selectable:color:english
+fruits;blue
+
+# Templates
+
+## lesson_1
+>english;^japanese;~notes
+>vocab;countable_noun;english;{banana}
+>vocab;color;english;{blue}
+
+{
+    <wrong_colors:object:e_plural> are not <wrong_colors:color:english>.
+    <wrong_colors:object:japanese>は<wrong_colors:color:japanese>ではありません。
+"Contrast: ""not blue""; vocabulary note."
+}
+
+{
+    [greetings:english]
+    [greetings:japanese]
+    [greetings:english]
+}
+
+{
+    [_alice:english] studies.
+    [_alice:japanese]は勉強します。
+    Person: [_alice:english].
+}

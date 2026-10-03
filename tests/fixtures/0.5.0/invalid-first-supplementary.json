@@ -1,0 +1,24 @@
+{
+  "categories": [],
+  "groups": [],
+  "pair_groups": [],
+  "chapters": [
+    {
+      "name": "lesson_1",
+      "column_variants": [
+        "~notes",
+        "english"
+      ],
+      "forced_first_side": 0,
+      "templates": [
+        {
+          "sides": [
+            "A note.",
+            "Hello."
+          ]
+        }
+      ],
+      "vocab": []
+    }
+  ]
+}

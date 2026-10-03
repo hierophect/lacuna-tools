@@ -1,0 +1,88 @@
+{
+  "categories": [
+    {
+      "name": "item",
+      "variant_names": [
+        "key",
+        "english"
+      ],
+      "num_variants": 2,
+      "selectables": [
+        {
+          "variants": [
+            "apple",
+            "apple"
+          ]
+        },
+        {
+          "variants": [
+            "banana",
+            "banana"
+          ]
+        }
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "food",
+      "category_name": "item",
+      "key_variant_name": "key",
+      "keys": [
+        "apple",
+        "banana"
+      ]
+    }
+  ],
+  "pair_groups": [],
+  "chapters": [
+    {
+      "name": "lesson_1",
+      "column_variants": [
+        "english"
+      ],
+      "forced_first_side": 0,
+      "templates": [
+        {
+          "sides": [
+            "[food:english] is available."
+          ]
+        }
+      ],
+      "vocab": [
+        {
+          "name": "vocab",
+          "category_name": "item",
+          "key_variant_name": "key",
+          "keys": [
+            "apple"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "lesson_2",
+      "column_variants": [
+        "english"
+      ],
+      "forced_first_side": 0,
+      "templates": [
+        {
+          "sides": [
+            "[food:english] is ready."
+          ]
+        }
+      ],
+      "vocab": [
+        {
+          "name": "vocab",
+          "category_name": "item",
+          "key_variant_name": "key",
+          "keys": [
+            "banana"
+          ]
+        }
+      ]
+    }
+  ]
+}

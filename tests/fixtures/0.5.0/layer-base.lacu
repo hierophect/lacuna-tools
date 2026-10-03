@@ -1,0 +1,18 @@
+# Selectables
+
+## item
+>key;english
+apple;apple
+
+# Groups
+food;item;key;{apple}
+
+# Templates
+
+## lesson_1
+>english
+>vocab;item;key;{apple}
+
+{
+    [food:english] is available.
+}
